@@ -36,22 +36,31 @@ def forget_python_pkg(package):
     Args:
         package: name of the Python package to exclude
     """
-    import pkg_resources
-
-    try:
-        dist = pkg_resources.get_distribution(package)
-    except pkg_resources.DistributionNotFound:
-        return
+    dist_location = None
+    dist = importlib.metadata.distribution(package)
+    if dist.files:
+        # Get the parent directory of the first file in the distribution
+        first_file = next(iter(dist.files))
+        dist_location = str(first_file.locate().parent.parent)
+    else:
+        # Fallback: try to get location from sys.path and package name
+        try:
+            spec = importlib.util.find_spec(package)
+            if spec and spec.origin:
+                # Get the parent directory containing the package
+                dist_location = Path(spec.origin).parent.parent
+        except AttributeError:
+            pass
     PYTHONPATH = os.environ.get("PYTHONPATH")
-    if PYTHONPATH is not None and dist.location in PYTHONPATH:
+    if PYTHONPATH is not None and dist_location in PYTHONPATH:
         logging.debug(
             "Remove incompatible version of %s in PYTHONPATH: %s",
             package,
-            dist.location,
+            dist_location,
         )
-        os.environ["PYTHONPATH"] = PYTHONPATH.replace(dist.location, "")
+        os.environ["PYTHONPATH"] = PYTHONPATH.replace(dist_location, "")
         try:
-            sys.path.remove(dist.location)
+            sys.path.remove(dist_location)
         except ValueError:
             pass
 
