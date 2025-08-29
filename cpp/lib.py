@@ -8,21 +8,22 @@ import collections
 import copy
 from fnmatch import fnmatch
 import functools
+import importlib.metadata
+import importlib.util
 import logging
 import operator
 import os
 import os.path
 from pathlib import Path
+import packaging.requirements
 import re
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
-from typing import List
 import urllib.request
 import venv
-
 
 THIS_SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_RE_EXTRACT_VERSION = "([0-9]+\\.[0-9]+(\\.[0-9]+)?[ab]?)"
@@ -36,22 +37,31 @@ def forget_python_pkg(package):
     Args:
         package: name of the Python package to exclude
     """
-    import pkg_resources
-
-    try:
-        dist = pkg_resources.get_distribution(package)
-    except pkg_resources.DistributionNotFound:
-        return
+    dist_location = None
+    dist = importlib.metadata.distribution(package)
+    if dist.files:
+        # Get the parent directory of the first file in the distribution
+        first_file = next(iter(dist.files))
+        dist_location = str(first_file.locate().parent.parent)
+    else:
+        # Fallback: try to get location from sys.path and package name
+        try:
+            spec = importlib.util.find_spec(package)
+            if spec and spec.origin:
+                # Get the parent directory containing the package
+                dist_location = Path(spec.origin).parent.parent
+        except AttributeError:
+            pass
     PYTHONPATH = os.environ.get("PYTHONPATH")
-    if PYTHONPATH is not None and dist.location in PYTHONPATH:
+    if PYTHONPATH is not None and dist_location in PYTHONPATH:
         logging.debug(
             "Remove incompatible version of %s in PYTHONPATH: %s",
             package,
-            dist.location,
+            dist_location,
         )
-        os.environ["PYTHONPATH"] = PYTHONPATH.replace(dist.location, "")
+        os.environ["PYTHONPATH"] = PYTHONPATH.replace(dist_location, "")
         try:
-            sys.path.remove(dist.location)
+            sys.path.remove(dist_location)
         except ValueError:
             pass
 
@@ -300,7 +310,7 @@ class BBPVEnv:
         """
         return self.bin_dir.joinpath("python")
 
-    def pip_cmd(self, *args) -> List[str]:
+    def pip_cmd(self, *args) -> list[str]:
         """
         Execute a pip command
 
@@ -393,16 +403,22 @@ class BBPVEnv:
             False otherwise
         """
         try:
-            import pkg_resources
+            # Parse the requirement string
+            req = packaging.requirements.Requirement(str(requirement))
 
-            pkg_resources.require(str(requirement))
+            # Check if the package is installed
+            try:
+                dist = importlib.metadata.distribution(req.name)
+            except importlib.metadata.PackageNotFoundError:
+                return False
+
+            # Check if the version satisfies the requirement
+            if req.specifier and not req.specifier.contains(dist.version):
+                return False
+
             return True
-        except ImportError:
-            self._install_requirement("setuptools", restart=True)
-        except pkg_resources.ContextualVersionConflict as conflict:
-            forget_python_pkg(conflict.req.name)
-            return False
-        except (pkg_resources.VersionConflict, pkg_resources.DistributionNotFound):
+        except Exception:
+            # Handle any parsing or version checking errors
             return False
 
     def ensure_requirement(self, requirement, restart=True):
@@ -542,9 +558,8 @@ class Tool(metaclass=abc.ABCMeta):
             name = pip_pkg
         else:
             name = self.name
-        import pkg_resources
 
-        return pkg_resources.Requirement.parse(f"{name} {self.user_config['version']}")
+        return packaging.requirements.Requirement(f"{name} {self.user_config['version']}")
 
     @abc.abstractmethod
     def configure(self):
@@ -813,9 +828,8 @@ class ExecutableTool(Tool):
                 pkg_name = self.name
                 if isinstance(self.config["capabilities"].pip_pkg, str):
                     pkg_name = self.config["capabilities"].pip_pkg
-                import pkg_resources
 
-                return pkg_resources.get_distribution(pkg_name).version
+                return importlib.metadata.version(pkg_name)
 
         cmd = [path] + self._config["version_opt"]
         log_command(cmd)
