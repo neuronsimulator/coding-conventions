@@ -402,16 +402,25 @@ class BBPVEnv:
             False otherwise
         """
         try:
-            import pkg_resources
+            import packaging.requirements
+            # Parse the requirement string
+            req = packaging.requirements.Requirement(str(requirement))
 
-            pkg_resources.require(str(requirement))
+            # Check if the package is installed
+            try:
+                dist = importlib.metadata.distribution(req.name)
+            except importlib.metadata.PackageNotFoundError:
+                return False
+
+            # Check if the version satisfies the requirement
+            if req.specifier and not req.specifier.contains(dist.version):
+                return False
+
             return True
         except ImportError:
-            self._install_requirement("setuptools", restart=True)
-        except pkg_resources.ContextualVersionConflict as conflict:
-            forget_python_pkg(conflict.req.name)
-            return False
-        except (pkg_resources.VersionConflict, pkg_resources.DistributionNotFound):
+            self._install_requirement("packaging", restart=True)
+        except Exception:
+            # Handle any parsing or version checking errors
             return False
 
     def ensure_requirement(self, requirement, restart=True):
