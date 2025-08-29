@@ -411,6 +411,7 @@ class BBPVEnv:
         """
         try:
             import packaging.requirements
+
             # Parse the requirement string
             req = packaging.requirements.Requirement(str(requirement))
 
@@ -570,6 +571,7 @@ class Tool(metaclass=abc.ABCMeta):
             name = self.name
 
         import packaging.requirements
+
         return packaging.requirements.Requirement(
             f"{name} {self.user_config['version']}"
         )
@@ -796,9 +798,7 @@ class ExecutableTool(Tool):
             raise FileNotFoundError(f"Could not find tool {self}")
         all_paths = [(p, self.find_version(p)) for p in paths]
         paths = list(
-            filter(
-                lambda tpl: self.requirement.specifier.contains(tpl[1]), all_paths
-            )
+            filter(lambda tpl: self.requirement.specifier.contains(tpl[1]), all_paths)
         )
         paths = list(sorted(paths, key=lambda tup: tup[1]))  # sort by version
         if not paths:
@@ -847,6 +847,7 @@ class ExecutableTool(Tool):
                     pkg_name = self.config["capabilities"].pip_pkg
 
                 import packaging.requirements
+
                 req = packaging.requirements.Requirement(pkg_name)
                 return importlib.metadata.version(req.name)
 
