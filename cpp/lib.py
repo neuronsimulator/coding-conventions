@@ -36,22 +36,39 @@ def forget_python_pkg(package):
     Args:
         package: name of the Python package to exclude
     """
-    import pkg_resources
-
     try:
-        dist = pkg_resources.get_distribution(package)
-    except pkg_resources.DistributionNotFound:
+        dist = importlib.metadata.distribution(package)
+    except importlib.metadata.PackageNotFoundError:
         return
+
+    dist_location = None
+    if dist.files:
+        # Get the parent directory of the first file in the distribution
+        first_file = next(iter(dist.files))
+        dist_location = str(first_file.locate().parent.parent)
+    else:
+        # Fallback: try to get location from sys.path and package name
+        try:
+            spec = importlib.util.find_spec(package)
+            if spec and spec.origin:
+                # Get the parent directory containing the package
+                dist_location = str(Path(spec.origin).parent.parent)
+        except (AttributeError, ImportError):
+            pass
+
+    if dist_location is None:
+        return
+
     PYTHONPATH = os.environ.get("PYTHONPATH")
-    if PYTHONPATH is not None and dist.location in PYTHONPATH:
+    if PYTHONPATH is not None and dist_location in PYTHONPATH:
         logging.debug(
             "Remove incompatible version of %s in PYTHONPATH: %s",
             package,
-            dist.location,
+            dist_location,
         )
-        os.environ["PYTHONPATH"] = PYTHONPATH.replace(dist.location, "")
+        os.environ["PYTHONPATH"] = PYTHONPATH.replace(dist_location, "")
         try:
-            sys.path.remove(dist.location)
+            sys.path.remove(dist_location)
         except ValueError:
             pass
 
@@ -553,7 +570,9 @@ class Tool(metaclass=abc.ABCMeta):
             name = self.name
 
         import packaging.requirements
-        return packaging.requirements.Requirement(f"{name} {self.user_config['version']}")
+        return packaging.requirements.Requirement(
+            f"{name} {self.user_config['version']}"
+        )
 
     @abc.abstractmethod
     def configure(self):
@@ -776,7 +795,11 @@ class ExecutableTool(Tool):
         if not paths:
             raise FileNotFoundError(f"Could not find tool {self}")
         all_paths = [(p, self.find_version(p)) for p in paths]
-        paths = list(filter(lambda tpl: self.requirement.specifier.contains(tpl[1]), all_paths))
+        paths = list(
+            filter(
+                lambda tpl: self.requirement.specifier.contains(tpl[1]), all_paths
+            )
+        )
         paths = list(sorted(paths, key=lambda tup: tup[1]))  # sort by version
         if not paths:
             raise FileNotFoundError(
