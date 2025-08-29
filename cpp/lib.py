@@ -542,9 +542,9 @@ class Tool(metaclass=abc.ABCMeta):
             name = pip_pkg
         else:
             name = self.name
-        import pkg_resources
 
-        return pkg_resources.Requirement.parse(f"{name} {self.user_config['version']}")
+        import packaging.requirements
+        return packaging.requirements.Requirement(f"{name} {self.user_config['version']}")
 
     @abc.abstractmethod
     def configure(self):
@@ -767,7 +767,7 @@ class ExecutableTool(Tool):
         if not paths:
             raise FileNotFoundError(f"Could not find tool {self}")
         all_paths = [(p, self.find_version(p)) for p in paths]
-        paths = list(filter(lambda tpl: tpl[1] in self.requirement, all_paths))
+        paths = list(filter(lambda tpl: self.requirement.specifier.contains(tpl[1]), all_paths))
         paths = list(sorted(paths, key=lambda tup: tup[1]))  # sort by version
         if not paths:
             raise FileNotFoundError(
