@@ -19,10 +19,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from typing import List
 import urllib.request
 import venv
-
 
 THIS_SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_RE_EXTRACT_VERSION = "([0-9]+\\.[0-9]+(\\.[0-9]+)?[ab]?)"
@@ -300,7 +298,7 @@ class BBPVEnv:
         """
         return self.bin_dir.joinpath("python")
 
-    def pip_cmd(self, *args) -> List[str]:
+    def pip_cmd(self, *args) -> list[str]:
         """
         Execute a pip command
 
