@@ -8,6 +8,8 @@ import collections
 import copy
 from fnmatch import fnmatch
 import functools
+import importlib.metadata
+import importlib.util
 import logging
 import operator
 import os
@@ -811,9 +813,10 @@ class ExecutableTool(Tool):
                 pkg_name = self.name
                 if isinstance(self.config["capabilities"].pip_pkg, str):
                     pkg_name = self.config["capabilities"].pip_pkg
-                import pkg_resources
 
-                return pkg_resources.get_distribution(pkg_name).version
+                import packaging.requirements
+                req = packaging.requirements.Requirement(pkg_name)
+                return importlib.metadata.version(req.name)
 
         cmd = [path] + self._config["version_opt"]
         log_command(cmd)
