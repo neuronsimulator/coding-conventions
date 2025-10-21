@@ -1,7 +1,9 @@
-# BlueBrain HPC Team C++ Development Guidelines
+# NEURON Team Development Guidelines
+
+**IMPORTANT NOTE**: this is a fork of the archived [Blue Brain Project HPC Team coding conventions](https://github.com/BlueBrain/hpc-coding-conventions), adapted for use in NEURON.
 
 This document describes both C++ development guidelines adopted by
-HPC team, and the tools and processes required to
+the NEURON team, and the tools and processes required to
 ensure they are properly followed over time.
 
 ## Documentation
@@ -54,7 +56,7 @@ Optionally, it will also look for:
 
 You can import this CMake project into your Git repository using a git submodule:
 ```
-git submodule add https://github.com/BlueBrain/hpc-coding-conventions.git
+git submodule add https://github.com/neuronsimulator/coding-conventions.git
 git submodule update --init --recursive
 ```
 
@@ -384,9 +386,13 @@ This project provides helper functions to deal with these dependencies:
 Should you want to contribute to the naming conventions,
 please refer to the dedicated [contributing document](./cpp/formatting/CONTRIBUTING.md) first.
 
+## Funding
 
-## Funding & Acknowledgment
+The development of this software was supported by funding to the Laboratory of Neural Microcircuitry (LNMC), a research center of the École polytechnique fédérale de Lausanne (EPFL), with funding from European Union's Horizon Europe Grant no. 101147319 (EBRAINS 2.0: A Research Infrastructure to Advance Neuroscience and Brain Health).
+
+## Past Funding
 
 The development of this software was supported by funding to the Blue Brain Project, a research center of the École polytechnique fédérale de Lausanne (EPFL), from the Swiss government's ETH Board of the Swiss Federal Institutes of Technology.
 
-Copyright © 2019-2022 Blue Brain Project/EPFL
+Copyright © 2019-2024 Blue Brain Project/EPFL
+Copyright © 2025-2026 EPFL
