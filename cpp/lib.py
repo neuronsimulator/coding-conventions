@@ -1179,6 +1179,7 @@ class BBPProject:
         if task == "format":
             try:
                 import black
+
                 print("=== Black version used by coding-conventions/format ===")
                 print(f"black: {black.__version__}")
                 print(f"Python: {sys.version.split()[0]}")
