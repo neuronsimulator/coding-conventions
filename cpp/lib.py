@@ -1174,6 +1174,19 @@ class BBPProject:
         task_config = cls.TASKS_DESCRIPTION[task]
         parser = cls.task_cli(task)
         options = parser.parse_args(args=args)
+
+        # === Debug: Print Black version (helpful for CI and local debugging) ===
+        if task == "format":
+            try:
+                import black
+
+                print("=== Black version used by coding-conventions/format ===")
+                print(f"black: {black.__version__}")
+                print(f"Python: {sys.version.split()[0]}")
+                print(f"Interpreter: {sys.executable}")
+            except Exception as e:
+                print(f"Could not determine black version: {e}")
+
         if options.verbose == 0:
             level = logging.WARN
         elif options.verbose == 1:
