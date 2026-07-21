@@ -1175,18 +1175,6 @@ class BBPProject:
         parser = cls.task_cli(task)
         options = parser.parse_args(args=args)
 
-        # === Debug: Print Black version (helpful for CI and local debugging) ===
-        if task == "format":
-            try:
-                import black
-
-                print("=== Black version used by coding-conventions/format ===")
-                print(f"black: {black.__version__}")
-                print(f"Python: {sys.version.split()[0]}")
-                print(f"Interpreter: {sys.executable}")
-            except Exception as e:
-                print(f"Could not determine black version: {e}")
-
         if options.verbose == 0:
             level = logging.WARN
         elif options.verbose == 1:
@@ -1210,6 +1198,101 @@ class BBPProject:
             logging.error("%i jobs failed", num_errors)
         return num_errors
 
+    @staticmethod
+    def _python_shebang_interpreter(path: str):
+        """
+        Return the Python interpreter from a console-script shebang, if any.
+
+        Resolves wrappers (e.g. pyenv shims) so the underlying black script's
+        ``#!...python...`` line is reported when present.
+        """
+        try:
+            candidates = [Path(path)]
+            try:
+                candidates.append(Path(path).resolve())
+            except OSError:
+                pass
+            # pyenv shims are bash scripts, not symlinks; resolve via pyenv which.
+            pyenv = shutil.which("pyenv")
+            if pyenv:
+                try:
+                    proc = subprocess.run(
+                        [pyenv, "which", Path(path).name],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                        encoding="utf-8",
+                    )
+                    if proc.returncode == 0 and proc.stdout.strip():
+                        candidates.append(Path(proc.stdout.strip()))
+                except OSError:
+                    pass
+
+            seen = set()
+            for p in candidates:
+                key = str(p)
+                if key in seen:
+                    continue
+                seen.add(key)
+                try:
+                    with open(p, "rb") as file:
+                        line = file.readline().decode("utf-8", errors="replace").strip()
+                except OSError:
+                    continue
+                if line.startswith("#!") and "python" in line.lower():
+                    return line[2:].strip()
+        except Exception:
+            return None
+        return None
+
+    @classmethod
+    def _report_black_version(cls, tools):
+        """
+        Print the Black executable actually used for ``format``.
+
+        Do not ``import black`` in the format driver: that process often re-execs
+        into ``.bbp-project-venv`` for PyYAML/cmake-format while Black may still
+        be a matching CLI found on PATH outside the venv. Report the resolved
+        tool path, version, and Black's own Python instead.
+        """
+        for tool in tools:
+            if tool.name != "black":
+                continue
+            try:
+                path = str(tool.path)
+                version = getattr(tool, "_version", None)
+                if version is None:
+                    version = tool.find_version(path)
+
+                print("=== Black version used by coding-conventions/format ===")
+                print(f"black: {version}")
+                print(f"path: {path}")
+
+                proc = subprocess.run(
+                    [path, "--version"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                    encoding="utf-8",
+                )
+                out = (proc.stdout or "").strip()
+                py_match = re.search(r"Python \([^)]*\)\s+(\S+)", out)
+                if py_match:
+                    print(f"Python: {py_match.group(1)}")
+
+                interp = cls._python_shebang_interpreter(path)
+                if interp:
+                    print(f"Interpreter: {interp}")
+
+                # Driver after any venv re-exec; useful when it differs from Black.
+                print(f"format driver: {sys.executable}")
+            except Exception as e:
+                print(f"Could not determine black version: {e}")
+            finally:
+                # Avoid losing this block when stdout is fully buffered under ninja/CI.
+                sys.stdout.flush()
+            break
+
     def run_global_task(self, task, **kwargs):
         """
         Execute a task that do not take files from codebase in argument
@@ -1226,6 +1309,8 @@ class BBPProject:
             tool.configure()
         [tool.configure() for tool in tools]
         [tool.prepare_config() for tool in tools if "config_file" in tool.config]
+        if task == "format":
+            self._report_black_version(tools)
         num_errors = 0
         for tool in tools:
             num_errors += tool.run(task, **kwargs)
@@ -1247,6 +1332,8 @@ class BBPProject:
         tools = list(self.tools_for_task(task, languages))
         [tool.configure() for tool in tools]
         [tool.prepare_config() for tool in tools if "config_file" in tool.config]
+        if task == "format":
+            self._report_black_version(tools)
 
         if not tools:
             logging.warning(
