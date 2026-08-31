@@ -73,6 +73,58 @@ def forget_python_pkg(package):
             pass
 
 
+def project_root_from_git_info(module_root, superproject, cwd):
+    """
+    Decide the project root whose ``.bbp-project.yaml`` should be used.
+
+    Never use ``parent(git-dir)`` as a working tree: that is wrong for git
+    worktrees and ``git clone --separate-git-dir``, where git-dir lives under
+    ``.git/worktrees/<name>`` (or a separate directory) rather than
+    ``<root>/.git``.
+
+    Args:
+        module_root: ``git rev-parse --show-toplevel`` of this coding-conventions
+            checkout.
+        superproject: ``git rev-parse --show-superproject-working-tree``, or
+            ``None`` if this tree is not a submodule.
+        cwd: current working directory.
+
+    Returns:
+        Absolute path to the superproject working tree when this project is
+        used as a git submodule (including when that superproject is a linked
+        worktree), unless *cwd* is inside the module (development of
+        coding-conventions itself). Otherwise the module working tree.
+    """
+    module_root = Path(module_root).resolve()
+    cwd = Path(cwd).resolve()
+    if superproject:
+        superproject = Path(superproject).resolve()
+        try:
+            cwd.relative_to(module_root)
+            # cwd is inside hpc-coding-conventions module.
+            # assume this is for its development.
+            return module_root
+        except ValueError:
+            return superproject
+    return module_root
+
+
+def _git_rev_parse_text(*args, cwd=None):
+    """
+    Run ``git rev-parse`` and return stripped stdout.
+
+    Raises:
+        subprocess.CalledProcessError: git failed (unknown option, not a repo)
+    """
+    cmd = list((which("git"), "rev-parse") + args)
+    log_command(cmd, level=logging.DEBUG)
+    return (
+        subprocess.check_output(cmd, cwd=cwd, stderr=subprocess.DEVNULL)
+        .decode("utf-8")
+        .strip()
+    )
+
+
 @functools.lru_cache()
 def source_dir():
     """
@@ -81,31 +133,30 @@ def source_dir():
         The parent repository if hpc-coding-conventions is used
         as a git module, this repository otherwise.
 
-    Implementation note:
-        alternative is to use
-        "git rev-parse --show-superproject-working-tree"
-        but this solution requires git 2.13 or higher
+    Uses ``git rev-parse --show-superproject-working-tree`` (Git 2.13+) so
+    linked worktrees and ``--separate-git-dir`` checkouts resolve to the
+    working tree, not ``parent(git-dir)``.
     """
-
-    def git_rev_parse(*args, **kwargs):
-        cmd = list((which("git"), "rev-parse") + args)
-        log_command(cmd, level=logging.DEBUG)
-        output = subprocess.check_output(cmd, **kwargs).decode("utf-8").strip()
-        return Path(output).resolve()
-
-    git_dir = Path(git_rev_parse("--git-dir", cwd=THIS_SCRIPT_DIR))
-    if git_dir.parent not in THIS_SCRIPT_DIR.parents:
-        # This project is used as a git module
-        module_dir = git_rev_parse("--show-toplevel", cwd=THIS_SCRIPT_DIR)
-        git_dir = git_rev_parse("--git-dir", cwd=os.path.dirname(module_dir))
-        try:
-            Path.cwd().relative_to(module_dir)
-            # cwd is inside hpc-coding-conventions module.
-            # assume this is for its development.
-            return module_dir
-        except ValueError:
-            pass
-    return git_dir.parent
+    module_text = _git_rev_parse_text("--show-toplevel", cwd=THIS_SCRIPT_DIR)
+    module_root = Path(module_text).resolve()
+    try:
+        super_text = _git_rev_parse_text(
+            "--show-superproject-working-tree", cwd=THIS_SCRIPT_DIR
+        )
+    except subprocess.CalledProcessError:
+        # Git < 2.13 has no --show-superproject-working-tree.
+        # Detect a submodule from git-dir location, but still query
+        # --show-toplevel for the path (parent(git-dir) is wrong in worktrees).
+        git_dir_text = _git_rev_parse_text("--git-dir", cwd=THIS_SCRIPT_DIR)
+        git_dir = Path(git_dir_text).resolve()
+        if git_dir.parent not in THIS_SCRIPT_DIR.parents:
+            super_text = _git_rev_parse_text(
+                "--show-toplevel", cwd=os.path.dirname(module_root)
+            )
+        else:
+            super_text = ""
+    superproject = Path(super_text).resolve() if super_text else None
+    return project_root_from_git_info(module_root, superproject, Path.cwd())
 
 
 def merge_yaml_files(*files, **kwargs):
