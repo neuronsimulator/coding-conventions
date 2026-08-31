@@ -28,22 +28,39 @@ def source_dir(git="git"):
         absolute path to the root of a repository. The parent repository
         if hpc-coding-conventions is used as a git module, this repository otherwise.
 
-    Alternative to "git rev-parse --show-superproject-working-tree"
-    but this solution requires git 2.13 or higher
+    Uses ``git rev-parse --show-superproject-working-tree`` (Git 2.13+) so
+    linked worktrees and ``--separate-git-dir`` checkouts resolve to the
+    working tree, not ``os.path.dirname(git-dir)``. Keep in sync with
+    ``cpp/lib.py`` ``source_dir``.
     """
 
     def git_rev_parse(*args, **kwargs):
         cmd = list((git, "rev-parse") + args)
         log_command(cmd)
-        output = subprocess.check_output(cmd, **kwargs).decode("utf-8").strip()
-        return os.path.realpath(output)
+        output = (
+            subprocess.check_output(cmd, stderr=subprocess.DEVNULL, **kwargs)
+            .decode("utf-8")
+            .strip()
+        )
+        return os.path.realpath(output) if output else ""
 
-    git_dir = git_rev_parse("--git-dir", cwd=THIS_SCRIPT_DIR)
-    if os.path.dirname(git_dir) not in THIS_SCRIPT_DIR:
-        # This project is used as a git module
+    try:
+        superproject = git_rev_parse(
+            "--show-superproject-working-tree", cwd=THIS_SCRIPT_DIR
+        )
+    except subprocess.CalledProcessError:
+        superproject = ""
+        git_dir = git_rev_parse("--git-dir", cwd=THIS_SCRIPT_DIR)
         module_dir = git_rev_parse("--show-toplevel", cwd=THIS_SCRIPT_DIR)
-        git_dir = git_rev_parse("--git-dir", cwd=os.path.dirname(module_dir))
-    return os.path.dirname(git_dir)
+        if os.path.dirname(git_dir) not in THIS_SCRIPT_DIR:
+            superproject = git_rev_parse(
+                "--show-toplevel", cwd=os.path.dirname(module_dir)
+            )
+        else:
+            return module_dir
+    if superproject:
+        return superproject
+    return git_rev_parse("--show-toplevel", cwd=THIS_SCRIPT_DIR)
 
 
 class cached_property(object):
